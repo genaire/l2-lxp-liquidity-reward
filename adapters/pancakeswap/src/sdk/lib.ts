@@ -1,5 +1,6 @@
-import { V3_SUBGRAPH_URL, client } from './config';
+import { V3_SUBGRAPH_URL, VFAT_SUBGRAPH_URL, client } from './config';
 import { UserPosition } from './types';
+import { Abi } from 'viem';
 
 type V3Position = {
   id: string;
@@ -164,6 +165,25 @@ export const getV3UserPositionsAtBlock = async (
   return [...resultMap.values()];
 };
 
+export const getSickles = async (blockNumber: number) => {
+  const query = `query fetchSickles {
+        sickleAddresses(block: { number: ${blockNumber} }) {
+            sickle
+        }
+    }`;
+
+  const response = await fetch(VFAT_SUBGRAPH_URL, {
+    method: 'POST',
+    body: JSON.stringify({ query }),
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const { data } = await response.json();
+
+  return (data as { sickleAddresses: { sickle: `0x${string}` }[] }).sickleAddresses;
+};
+
+
 const getOwnerFromMasterChef = async (
   pids: string[],
   blockNumber: bigint,
@@ -225,9 +245,46 @@ const getOwnerFromMasterChef = async (
   });
 };
 
+export const getSickleOwners = async (sickleAddresses: `0x${string}`[]): Promise<Record<string, string>> => {
+  const abi: Abi = [
+    {
+      inputs: [],
+      name: 'owner',
+      outputs: [{ internalType: 'address', name: '', type: 'address' }],
+      stateMutability: 'view',
+      type: 'function',
+    },
+  ] as const;
+
+  const results = await client.multicall({
+    allowFailure: false,
+    contracts: sickleAddresses.map(
+      (sickle) =>
+        ({
+          abi,
+          address: sickle,
+          functionName: 'owner',
+          args: [],
+        } as const),
+    ),
+  });
+
+  const resultsArray = results as string[];
+
+  const sickleOwners: Record<string, string> = {};
+  for (let i = 0; i < sickleAddresses.length; i++) {
+    sickleOwners[sickleAddresses[i]] = resultsArray[i];
+  }
+  
+  return sickleOwners;
+};
+
+
+
 export const getTimestampAtBlock = async (blockNumber: number) => {
   const block = await client.getBlock({
     blockNumber: BigInt(blockNumber),
   });
   return Number(block.timestamp * 1000n);
 };
+
